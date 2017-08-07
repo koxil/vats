@@ -1,6 +1,7 @@
 const constants = {
   style: {
     marginRight: 20,
+    marginTop: 20
   },
   tableParams: {
     fixedHeader: true,
@@ -15,7 +16,6 @@ const constants = {
   },
   tableColumns: ['id', 'date', 'product', 'country', 'delivery', 'paymentMethod', 'currency', 'revenues', 'revenuesInBYN'],
   nameColToType: {
-    id: 'TextField',
     date: 'DatePicker',
     product: 'TextField',
     country: 'TextField',

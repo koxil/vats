@@ -18,16 +18,12 @@ import {
   TableRowColumn
 }
 from 'material-ui/Table';
-import FloatingActionButton from 'material-ui/FloatingActionButton';
-import ContentAdd from 'material-ui/svg-icons/content/add';
-import ContentRemove from 'material-ui/svg-icons/content/remove';
-import ContentSave from 'material-ui/svg-icons/content/save';
-import ContentEdit from 'material-ui/svg-icons/content/flag';
 import {
   TextField,
   SelectField,
   MenuItem,
-  DatePicker
+  DatePicker,
+  RaisedButton
 }
 from 'material-ui';
 import * as firebase from 'firebase';
@@ -43,31 +39,54 @@ class App extends Component {
 
     this.state = {
       loggedIn: false,
-      login: '',
-      password: '',
       showAddRow: false,
       tableData: [],
       newRow: {
-        id: 1,
         date: new Date(),
         product: '',
         country: '',
         delivery: 0,
         paymentMethod: 0,
         currency: 0,
-        revenues: ''
+        revenues: 0,
+        revenuesInBYN: 0
       }
     };
   }
 
   componentDidMount() {
-    firebase.auth().onAuthStateChanged(user => this.setState({ loggedIn: Boolean(user) }));
+    firebase.auth().onAuthStateChanged(user => {
+      this.userUID = user.uid;
+      this.setState({ loggedIn: Boolean(user) });
 
-    const tableDataRef = firebase.database().ref().child('tableData');
-    tableDataRef.on("value", snap => this.setState({ tableData: JSON.parse(snap.val()) }));
+      const tableDataRef = firebase.database().ref().child(`tableData/${this.userUID}`);
+      tableDataRef.on("value", snap => {
+        const tableData = JSON.parse(snap.val())
+          .map(item => {
+            item.date = new Date(item.date);
+            return item;
+          })
+          .sort(({ date }, { date: otherDate }) => date - otherDate);
+        this.setState({ tableData });
+      });
+    });
+
+    document.addEventListener('keydown', event => {
+      const { keyCode } = event;
+      const enter = 13;
+      if (keyCode !== enter) {
+        return false;
+      }
+
+      const { loggedIn } = this.state;
+
+      if (loggedIn) {
+        this.saveDataHandler();
+      }
+    });
   }
 
-  handleChangeSel = (fieldName, event, index, value) => {
+  onSelectChange = (fieldName, event, index, value) => {
     let modNewRow = { ...this.state.newRow };
     modNewRow[fieldName] = value;
 
@@ -76,7 +95,7 @@ class App extends Component {
     });
   }
 
-  handleChange = (fieldName, event, value) => {
+  onFieldChange = (fieldName, event, value) => {
     let modNewRow = { ...this.state.newRow };
     modNewRow[fieldName] = value;
 
@@ -85,13 +104,13 @@ class App extends Component {
     });
   }
 
-  handleRowSel = selectedRowIndexes => {
+  selectRowHandler = selectedRowIndexes => {
     this.setState({
       selectedRowIndex: selectedRowIndexes[0]
     });
   }
 
-  handlerAddButClick = event => {
+  addRowHandler = event => {
     this.setState(prevState => {
       return {
         showAddRow: !prevState.showAddRow
@@ -99,7 +118,7 @@ class App extends Component {
     });
   }
 
-  handlerSaveButClick = event => {
+  saveDataHandler = event => {
     if (!this.state.showAddRow) {
       return false;
     }
@@ -107,21 +126,24 @@ class App extends Component {
     let modTableData = [...this.state.tableData];
     let modNewRow = { ...this.state.newRow };
 
-    modNewRow.revenuesInBYN = modNewRow.revenues;
+    if (!modNewRow.currency) {
+      modNewRow.revenuesInBYN = modNewRow.revenues;
+    }
     modNewRow.uid = Date.now();
     modTableData.push(modNewRow);
 
-    firebase.database().ref('tableData').set(JSON.stringify(modTableData));
+    firebase.database().ref(`tableData/${this.userUID}`).set(JSON.stringify(modTableData));
 
     this.setState({
       showAddRow: false
     });
   }
 
-  handlerEditButClick = event => {
+  editRowHandler = event => {
     const selectedRowIndex = this.state.selectedRowIndex;
 
     if (selectedRowIndex === undefined) {
+      alert('Ни одна строка не выделена!');
       return false;
     }
 
@@ -135,7 +157,7 @@ class App extends Component {
     });
   }
 
-  handlerRemoveButClick = event => {
+  removeRowHandler = event => {
     const selectedRowIndex = this.state.selectedRowIndex;
 
     if (selectedRowIndex === undefined) {
@@ -144,10 +166,18 @@ class App extends Component {
 
     let modTableData = [...this.state.tableData];
     modTableData.splice(selectedRowIndex, 1);
-    firebase.database().ref('tableData').set(JSON.stringify(modTableData));
+    firebase.database().ref(`tableData/${this.userUID}`).set(JSON.stringify(modTableData));
+  }
+
+  signOutHandler = () => {
+    firebase.auth().signOut().then(
+      () => this.setState({ loggedIn: false }),
+      error => alert(`Ошибка выхода из системы: ${error.message}`)
+    );
   }
 
   render() {
+    let revenuesInBYNSum = 0;
     return (
       <MuiThemeProvider>
         <div className="App">
@@ -164,7 +194,7 @@ class App extends Component {
               fixedFooter={tableParams.fixedFooter}
               selectable={tableParams.selectable}
               multiSelectable={tableParams.multiSelectable}
-              onRowSelection={this.handleRowSel}
+              onRowSelection={this.selectRowHandler}
             >
               <TableHeader
                 displaySelectAll={tableParams.showCheckboxes}
@@ -181,22 +211,29 @@ class App extends Component {
                 showRowHover={tableParams.showRowHover}
                 stripedRows={tableParams.stripedRows}
               >
-                {this.state.tableData.map(row => {
+                {this.state.tableData.map((row,j) => {
                   return (
                     <TableRow key={row.uid}>
                       {tableColumns.map((colunm,i) => {
+                      colunm === 'revenuesInBYN' ? revenuesInBYNSum += Number(row[colunm]) : '';
                       return (
-                      <TableRowColumn key={i}>{
-                        nameColToType[colunm] === 'DatePicker' ? moment(row[colunm]).format('L') :
-                          nameColToType[colunm] === 'TextField' ? row[colunm] :
-                          itemsToSelect[colunm].items.find(({code}) => code === row[colunm]).name
-                      }</TableRowColumn>)})}
-                  </TableRow>);
+                        colunm === 'id' ? 
+                        <TableRowColumn>{j + 1}</TableRowColumn>
+                        :
+                        <TableRowColumn key={i}>
+                          {nameColToType[colunm] === 'DatePicker' ? moment(row[colunm]).format('L') :
+                            nameColToType[colunm] === 'TextField' ? row[colunm] :
+                            itemsToSelect[colunm].items.find(({code}) => code === row[colunm]).name}
+                        </TableRowColumn>)})}
+                    </TableRow>);
                 })}
                 {this.state.showAddRow && (
                   <TableRow selectable={false}>
                     {tableColumns.map((colunm,i) => {
                       return (
+                        colunm === 'id' ? 
+                        <TableRowColumn disabled={true}>{this.state.tableData.length + 1}</TableRowColumn>
+                        :
                         <TableRowColumn>
                         {
                         nameColToType[colunm] === 'DatePicker' ? 
@@ -205,19 +242,19 @@ class App extends Component {
                             autoOk={true}
                             hintText="Дата"
                             value={this.state.newRow[colunm]} 
-                            onChange={this.handleChange.bind(this,colunm)} 
+                            onChange={this.onFieldChange.bind(this,colunm)} 
                           /> :
                           nameColToType[colunm] === 'TextField' ? 
                             <TextField
                               key={i}
                               hintText={linkBetweenColAndText[colunm]}
                               value={this.state.newRow[colunm]}
-                              onChange={this.handleChange.bind(this,colunm)}
+                              onChange={this.onFieldChange.bind(this,colunm)}
                             /> :
                               <SelectField
                                 key={i}
                                 value={this.state.newRow[colunm]}
-                                onChange={this.handleChangeSel.bind(this,colunm)}
+                                onChange={this.onSelectChange.bind(this,colunm)}
                               >
                               {itemsToSelect[colunm].items.map(menuitem => <MenuItem key={menuitem.code} value={menuitem.code} primaryText={menuitem.name} />)}
                             </SelectField>
@@ -227,27 +264,19 @@ class App extends Component {
                   </TableRow>
                 )}
               </TableBody>
-              <TableFooter
-                adjustForCheckbox={tableParams.showCheckboxes}
-              >
+              <TableFooter adjustForCheckbox={tableParams.showCheckboxes}>
                 <TableRow>
                  {tableColumns.map((item,i) => <TableHeaderColumn key={i}>{linkBetweenColAndText[item]}</TableHeaderColumn>)}
                 </TableRow>
               </TableFooter>
           </Table>
+          <h2>{`Итоговая выручка ${revenuesInBYNSum} BYN`}</h2>
           <div>
-            <FloatingActionButton onClick={this.handlerAddButClick} style={style}>
-              <ContentAdd />
-            </FloatingActionButton>
-            <FloatingActionButton onClick={this.handlerSaveButClick} backgroundColor="green" style={style}>
-              <ContentSave />
-            </FloatingActionButton>
-            <FloatingActionButton onClick={this.handlerEditButClick} backgroundColor="yellow" style={style}>
-              <ContentEdit />
-            </FloatingActionButton>
-            <FloatingActionButton onClick={this.handlerRemoveButClick} backgroundColor="red" style={style}>
-              <ContentRemove />
-            </FloatingActionButton>
+            <RaisedButton label="Добавить" onClick={this.addRowHandler} primary={true} style={style} />
+            <RaisedButton label="Редактировать" onClick={this.editRowHandler} style={style} backgroundColor="orange"/>
+            <RaisedButton label="Удалить" onClick={this.removeRowHandler} style={style} backgroundColor="red"/>
+            <RaisedButton label="Сохранить" onClick={this.saveDataHandler} style={style} backgroundColor="green"/>
+            <RaisedButton label="Выйти" onClick={this.signOutHandler} style={style} />
           </div>
         </div>}
         </div>

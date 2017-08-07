@@ -19,6 +19,20 @@ export default class Login extends React.Component {
     };
   }
 
+  componentDidMount() {
+    document.addEventListener('keydown', event => {
+      const { keyCode } = event;
+      const enter = 13;
+      if (keyCode !== enter) {
+        return false;
+      }
+      const { login, password } = this.state;
+      if (login && password) {
+        this.handleAuthSubmit();
+      }
+    });
+  }
+
   handleAuthChange = event => {
     const { name, value } = event.target;
     this.setState({
